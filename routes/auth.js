@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const db = require('../db'); // Adjust the path as necessary
+const db = require('../db'); // Importing the PostgreSQL pool connection
 
 const JWT_SECRET = 'your_secret_key'; // Replace with your secret key for signing the JWT
 
@@ -27,7 +27,6 @@ const createUsersTable = () => {
     });
 };
 
-
 // Call the createUsersTable function when the app starts
 createUsersTable();
 
@@ -36,23 +35,37 @@ router.get('/', (req, res) => {
     res.send('Auth router is working');
 });
 
+// Route to display all users
+router.get('/users', (req, res) => {
+    const getAllUsersQuery = 'SELECT id, username, email, created_at FROM users';
+
+    db.query(getAllUsersQuery, (error, results) => {
+        if (error) {
+            console.error('Failed to fetch users:', error);
+            return res.status(500).json({ message: "Server error" });
+        }
+
+        res.status(200).json(results.rows);
+    });
+});
+
 // Login route
 router.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        const checkQuery = 'SELECT * FROM users WHERE username = ?';
+        const checkQuery = 'SELECT * FROM users WHERE username = $1';
         db.query(checkQuery, [username], async (error, results) => {
             if (error) {
                 console.error('Database query failed:', error);
                 return res.status(500).json({ message: "Server error" });
             }
 
-            if (results.length === 0) {
+            if (results.rows.length === 0) {
                 return res.status(401).json({ message: "Invalid username or password" });
             }
 
-            const user = results[0];
+            const user = results.rows[0];
             const isPasswordValid = await bcrypt.compare(password, user.password);
             if (!isPasswordValid) {
                 return res.status(401).json({ message: "Invalid username or password" });
@@ -76,30 +89,30 @@ router.post('/register', async (req, res) => {
     }
 
     try {
-        const checkQuery = 'SELECT * FROM users WHERE username = ?';
+        const checkQuery = 'SELECT * FROM users WHERE username = $1';
         db.query(checkQuery, [username], async (error, results) => {
             if (error) {
                 console.error('Database query failed:', error);
                 return res.status(500).json({ error: 'Database query failed' });
             }
 
-            if (results.length > 0) {
+            if (results.rows.length > 0) {
                 return res.status(409).json({ error: 'Username already exists' });
             }
 
-            const emailCheckQuery = 'SELECT * FROM users WHERE email = ?';
+            const emailCheckQuery = 'SELECT * FROM users WHERE email = $1';
             db.query(emailCheckQuery, [email], async (error, results) => {
                 if (error) {
                     console.error('Database query failed:', error);
                     return res.status(500).json({ error: 'Database query failed' });
                 }
 
-                if (results.length > 0) {
+                if (results.rows.length > 0) {
                     return res.status(409).json({ error: 'Email already exists' });
                 }
 
                 const hashedPassword = await bcrypt.hash(password, 10);
-                const insertQuery = 'INSERT INTO users (username, password, email) VALUES (?, ?, ?)';
+                const insertQuery = 'INSERT INTO users (username, password, email) VALUES ($1, $2, $3) RETURNING id';
 
                 db.query(insertQuery, [username, hashedPassword, email], (error, results) => {
                     if (error) {
@@ -107,7 +120,7 @@ router.post('/register', async (req, res) => {
                         return res.status(500).json({ error: 'Failed to insert data' });
                     }
 
-                    res.status(201).json({ message: 'Signup successful', id: results.insertId });
+                    res.status(201).json({ message: 'Signup successful', id: results.rows[0].id });
                 });
             });
         });
