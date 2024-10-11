@@ -10,7 +10,7 @@ const JWT_SECRET = 'your_secret_key'; // Replace with your secret key for signin
 const createUsersTable = () => {
     const createTableQuery = `
         CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             username VARCHAR(255) NOT NULL UNIQUE,
             password VARCHAR(255) NOT NULL,
             email VARCHAR(255) NOT NULL UNIQUE,
@@ -26,6 +26,7 @@ const createUsersTable = () => {
         }
     });
 };
+
 
 // Call the createUsersTable function when the app starts
 createUsersTable();
