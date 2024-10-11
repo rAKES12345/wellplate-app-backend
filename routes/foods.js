@@ -1,25 +1,48 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db'); // Adjust the path as necessary
+const db = require('../db'); // Adjust the path to your DB connection file
+
+// Create the 'foods' table if it doesn't exist
+const createFoodsTableQuery = `
+    CREATE TABLE IF NOT EXISTS foods (
+        id SERIAL PRIMARY KEY,                -- Unique identifier for each food item
+        name VARCHAR(255) NOT NULL,           -- Name of the food item
+        calories INTEGER NOT NULL,            -- Calories content of the food item
+        protein NUMERIC(5, 2) NOT NULL,       -- Protein content (in grams)
+        carbs NUMERIC(5, 2) NOT NULL,         -- Carbohydrates content (in grams)
+        fats NUMERIC(5, 2) NOT NULL,          -- Fats content (in grams)
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Timestamp when the food item was added
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- Timestamp when the food item was last updated
+    );
+`;
+
+// Create the 'foods' table when the app starts
+db.query(createFoodsTableQuery, (err, result) => {
+    if (err) {
+        console.error("Error creating 'foods' table:", err);
+    } else {
+        console.log("'foods' table is ready or already exists.");
+    }
+});
 
 // Route to check if the foods router works
 router.get('/', (req, res) => {
-    res.send('foods router is working');
+    res.send('Foods router is working');
 });
 
 // Route to get all foods
 router.get('/getfoods', (req, res) => {
-    const getfoods = 'SELECT * FROM foods';
+    const getfoodsQuery = 'SELECT * FROM foods';
 
     // Execute the query
-    db.query(getfoods, (err, results) => {
+    db.query(getfoodsQuery, (err, results) => {
         if (err) {
             console.error(err); // Log the error for debugging
             return res.status(500).json({ message: "Server error" });
         }
 
         // Send the results back to the client
-        res.json(results);
+        res.json(results.rows); // Use `.rows` to access result set in pg
     });
 });
 
@@ -32,17 +55,19 @@ router.post('/addfood', (req, res) => {
         return res.status(400).json({ message: "Please provide all required fields." });
     }
 
-    const addfood = 'INSERT INTO foods (name, calories, protein, carbs, fats) VALUES (?, ?, ?, ?, ?)';
+    const addFoodQuery = `
+        INSERT INTO foods (name, calories, protein, carbs, fats)
+        VALUES ($1, $2, $3, $4, $5) RETURNING id`;
 
     // Execute the query
-    db.query(addfood, [name, calories, protein, carbs, fats], (err, results) => {
+    db.query(addFoodQuery, [name, calories, protein, carbs, fats], (err, results) => {
         if (err) {
             console.error(err); // Log the error for debugging
             return res.status(500).json({ message: "Server error" });
         }
 
-        // Send a success response
-        res.status(201).json({ message: "Food added successfully", foodId: results.insertId });
+        // Send a success response with the newly inserted food ID
+        res.status(201).json({ message: "Food added successfully", foodId: results.rows[0].id });
     });
 });
 
@@ -50,17 +75,17 @@ router.post('/addfood', (req, res) => {
 router.delete('/deletefood/:id', (req, res) => {
     const foodId = req.params.id; // Get the food ID from the URL parameter
 
-    const deletefood = 'DELETE FROM foods WHERE id = ?';
+    const deleteFoodQuery = 'DELETE FROM foods WHERE id = $1';
 
     // Execute the query
-    db.query(deletefood, [foodId], (err, results) => {
+    db.query(deleteFoodQuery, [foodId], (err, results) => {
         if (err) {
             console.error(err); // Log the error for debugging
             return res.status(500).json({ message: "Server error" });
         }
 
         // Check if any rows were affected (meaning a food item was deleted)
-        if (results.affectedRows === 0) {
+        if (results.rowCount === 0) {
             return res.status(404).json({ message: "Food item not found" });
         }
 
@@ -84,23 +109,23 @@ router.put('/editfood/:id', (req, res) => {
     const values = [];
     
     if (name) {
-        updateFields.push('name = ?');
+        updateFields.push('name = $' + (updateFields.length + 1));
         values.push(name);
     }
     if (calories) {
-        updateFields.push('calories = ?');
+        updateFields.push('calories = $' + (updateFields.length + 1));
         values.push(calories);
     }
     if (protein) {
-        updateFields.push('protein = ?');
+        updateFields.push('protein = $' + (updateFields.length + 1));
         values.push(protein);
     }
     if (carbs) {
-        updateFields.push('carbs = ?');
+        updateFields.push('carbs = $' + (updateFields.length + 1));
         values.push(carbs);
     }
     if (fats) {
-        updateFields.push('fats = ?');
+        updateFields.push('fats = $' + (updateFields.length + 1));
         values.push(fats);
     }
 
@@ -108,7 +133,7 @@ router.put('/editfood/:id', (req, res) => {
     values.push(foodId);
 
     // Construct the full SQL query
-    const updateQuery = `UPDATE foods SET ${updateFields.join(', ')} WHERE id = ?`;
+    const updateQuery = `UPDATE foods SET ${updateFields.join(', ')} WHERE id = $${values.length}`;
 
     // Execute the query
     db.query(updateQuery, values, (err, results) => {
@@ -118,7 +143,7 @@ router.put('/editfood/:id', (req, res) => {
         }
 
         // Check if any rows were affected (meaning a food item was updated)
-        if (results.affectedRows === 0) {
+        if (results.rowCount === 0) {
             return res.status(404).json({ message: "Food item not found" });
         }
 
